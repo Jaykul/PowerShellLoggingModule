@@ -1,0 +1,45 @@
+
+# Docs: https://aka.ms/yaml
+# Tools: https://marketplace.visualstudio.com/items?itemName=ms-azure-devops.azure-pipelines
+name: $(GitVersion_InformationalVersion)
+resources:
+  repositories:
+    - repository: templates
+      type: git
+      name: YamlTemplates
+      # ref: refs/tags/3.0.1
+      ref: forge/BinaryModules
+
+variables:
+  CompiledArtifact: _forTesting
+  SignedArtifact: Modules
+  PackageArtifact: Deployment
+
+jobs:
+  - template: GitVersion-job.yml@templates
+    parameters:
+      pool: Hosted VS2017
+
+  - template: Build-Module-job.yml@templates
+    parameters:
+      pool: Hosted VS2017
+      requiredModulesPath: RequiredModules.psd1
+      buildSourcePath: Module/PowerShellLogging/build.psd1
+      artifactName: $(CompiledArtifact)
+
+  - template: Pester-job.yml@templates
+    parameters:
+      pool: Hosted VS2017
+      dependsOn: ['Build']
+      compiledArtifact: $(CompiledArtifact)
+      testsDirectory: '$(Build.SourcesDirectory)\Tests'
+      excludeTag: ["Remoting", "WIP"] # Would require enabling it on hosted agents?
+
+  - template: Package-job.yml@templates
+    parameters:
+      dependsOn: ['GitVersion', 'Build', 'Pester']
+      compiledArtifact: $(CompiledArtifact)
+      signedArtifact: $(SignedArtifact)
+      packageArtifact: $(PackageArtifact)
+      fileName: $[format('$(Build.DefinitionName)_{0}', dependencies.GitVersion.outputs['GitVersion.NuGetVersion'])]
+      publishModule: $[format('$(Build.DefinitionName)/{0}', dependencies.GitVersion.outputs['GitVersion.MajorMinorPatch'])]
